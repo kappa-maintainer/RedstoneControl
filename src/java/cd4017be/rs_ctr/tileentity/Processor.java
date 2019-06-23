@@ -15,6 +15,7 @@ import cd4017be.lib.network.IGuiHandlerTile;
 import cd4017be.lib.network.StateSyncClient;
 import cd4017be.lib.network.StateSyncServer;
 import cd4017be.lib.network.StateSynchronizer;
+import cd4017be.lib.util.ItemFluidUtil;
 import cd4017be.lib.util.Utils;
 import cd4017be.rs_ctr.Main;
 import cd4017be.rs_ctr.api.DelayedSignal;
@@ -53,6 +54,8 @@ public class Processor extends WallMountGate implements IUpdatable, ITilePlaceHa
 
 	public static int BURNOUT_INTERVAL = 50;
 
+	ItemStack[] ingreds = new ItemStack[0];
+	int[] stats = new int[7];
 	String name = "";
 	BlockButton coreBtn = new BlockButton(null, ()-> null, ()-> name + "\n" + getError()) {
 		@Override
@@ -161,6 +164,9 @@ public class Processor extends WallMountGate implements IUpdatable, ITilePlaceHa
 				names.appendTag(new NBTTagString(port.name.substring(1)));
 			nbt.setTag("labels", names);
 			nbt.setString("name", name);
+			nbt.setIntArray("stats", stats);
+			if (mode != CLIENT)
+				nbt.setTag("ingr", ItemFluidUtil.saveItems(ingreds));
 		} else if (mode == SYNC) {
 			if (lastError != null)
 				nbt.setString("err", lastError);
@@ -184,6 +190,10 @@ public class Processor extends WallMountGate implements IUpdatable, ITilePlaceHa
 			name = nbt.getString("name");
 			keys = circuit.getState().nbt.getKeySet().toArray(keys);
 			Arrays.sort(keys);
+			{int[] arr = nbt.getIntArray("stats");
+			System.arraycopy(arr, 0, stats, 0, Math.min(arr.length, stats.length));}
+			if (mode != CLIENT)
+				ingreds = ItemFluidUtil.loadItems(nbt.getTagList("ingr", NBT.TAG_COMPOUND));
 		} else if (mode == SYNC) {
 			lastError = nbt.hasKey("err", NBT.TAG_STRING) ? nbt.getString("err") : null;
 		}
