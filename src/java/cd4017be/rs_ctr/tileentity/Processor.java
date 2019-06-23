@@ -66,7 +66,8 @@ public class Processor extends WallMountGate implements IUpdatable, ITilePlaceHa
 	}.setSize(0.25F, 0.25F);
 	public Circuit circuit;
 	IntConsumer[] callbacks;
-	private long burnoutTime = -1;
+	private long lastTick = 0;
+	public int energy, cap, usage, gain;
 	public byte tick;
 	public String lastError;
 	DelayedSignal delayed;
@@ -78,9 +79,18 @@ public class Processor extends WallMountGate implements IUpdatable, ITilePlaceHa
 	public void process() {
 		tick = 0;
 		if (unloaded) return;
-		if (burnoutTime > 0) {
-			if (burnoutTime > world.getTotalWorldTime()) return;
-			burnoutTime = -1;
+		{
+			long t = world.getTotalWorldTime();
+			if (lastTick > t) return;
+			int e = energy - usage + (int)(t - lastTick) * gain;
+			if (e >= 0) energy = e <= cap ? e : cap;
+			else {
+				doBurnout(false);
+				lastError = "power depleted";
+				energy = e + usage + BURNOUT_INTERVAL * gain;
+				return;
+			}
+			lastTick = t;
 		}
 		try {
 			int d = circuit.tick();
@@ -120,7 +130,7 @@ public class Processor extends WallMountGate implements IUpdatable, ITilePlaceHa
 			double d2 = (double)pos.getZ() + rand.nextDouble() * 0.6D + 0.2D;
 			world.spawnParticle(hard ? EnumParticleTypes.SMOKE_LARGE : EnumParticleTypes.SMOKE_NORMAL, d0, d1, d2, 0.0D, 0.0D, 0.0D);
 		}
-		burnoutTime = hard ? Long.MAX_VALUE : world.getTotalWorldTime() + BURNOUT_INTERVAL;
+		lastTick = hard ? Long.MAX_VALUE : world.getTotalWorldTime() + BURNOUT_INTERVAL;
 	}
 
 	@Override
@@ -167,12 +177,14 @@ public class Processor extends WallMountGate implements IUpdatable, ITilePlaceHa
 			nbt.setIntArray("stats", stats);
 			if (mode != CLIENT)
 				nbt.setTag("ingr", ItemFluidUtil.saveItems(ingreds));
+			if (mode != ITEM)
+				nbt.setInteger("energy", energy);
 		} else if (mode == SYNC) {
 			if (lastError != null)
 				nbt.setString("err", lastError);
 		}
 		if (mode == SAVE) {
-			nbt.setLong("burnout", burnoutTime);
+			nbt.setLong("burnout", lastTick);
 			nbt.setBoolean("active", tick != 0);
 		}
 	}
@@ -194,12 +206,16 @@ public class Processor extends WallMountGate implements IUpdatable, ITilePlaceHa
 			System.arraycopy(arr, 0, stats, 0, Math.min(arr.length, stats.length));}
 			if (mode != CLIENT)
 				ingreds = ItemFluidUtil.loadItems(nbt.getTagList("ingr", NBT.TAG_COMPOUND));
+			energy = nbt.getInteger("energy");
+			usage = stats[4];
+			gain = stats[5];
+			cap = stats[6];
 		} else if (mode == SYNC) {
 			lastError = nbt.hasKey("err", NBT.TAG_STRING) ? nbt.getString("err") : null;
 		}
 		super.loadState(nbt, mode);
 		if (mode == SAVE) {
-			burnoutTime = nbt.getLong("burnout");
+			lastTick = nbt.getLong("burnout");
 			tick = (byte)(nbt.getBoolean("active") ? 1 : 0);
 		}
 	}
@@ -242,6 +258,8 @@ public class Processor extends WallMountGate implements IUpdatable, ITilePlaceHa
 		if (nbt == null) return;
 		clearData();
 		loadState(nbt, ITEM);
+		energy = cap;
+		lastTick = world.getTotalWorldTime();
 		tick = 1;
 		setupData();
 	}
